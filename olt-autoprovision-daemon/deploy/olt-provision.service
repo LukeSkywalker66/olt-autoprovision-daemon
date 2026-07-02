@@ -1,0 +1,45 @@
+[Unit]
+Description=OLT Auto-Provision Daemon (Zero-Touch GPON Provisioning)
+Documentation=https://github.com/your-org/olt-autoprovision-daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=olt-daemon
+Group=olt-daemon
+WorkingDirectory=/opt/olt-autoprovision-daemon
+ExecStart=/opt/olt-autoprovision-daemon/venv/bin/python main.py
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=olt-provision
+
+# ---------------------------------------------------------------------------
+# Security Hardening
+# ---------------------------------------------------------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/olt-autoprovision-daemon/logs
+
+# Allow binding to privileged ports (<1024) if needed
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# ---------------------------------------------------------------------------
+# Resource Limits
+# ---------------------------------------------------------------------------
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# ---------------------------------------------------------------------------
+# KillMode: process = only the main process is killed on stop
+# ---------------------------------------------------------------------------
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+# OLT Auto-Provision Daemon — Dependencies
+# =============================================================================
+# Minimum external dependencies. Everything else uses Python 3.11+ stdlib:
+#   asyncio, logging, concurrent.futures, dataclasses, re, argparse, pathlib.
+# =============================================================================
+
+netmiko>=4.3.0,<5.0.0     # SSH client for Huawei VRP / multi-vendor
+pyyaml>=6.0,<7.0.0         # YAML configuration parsing

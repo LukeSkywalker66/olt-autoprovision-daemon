@@ -1,0 +1,71 @@
+# =============================================================================
+# OLT Auto-Provision Daemon — Multi-OLT Configuration (EXAMPLE)
+# =============================================================================
+# Copy this file to olts.yaml and fill in your real OLT credentials.
+#   cp config/olts.yaml.example config/olts.yaml
+#
+# WARNING: config/olts.yaml is in .gitignore — NEVER commit real credentials.
+# =============================================================================
+# Cada OLT se indexa por su IP (la misma que envía los syslogs UDP).
+# Las claves definidas en una entrada de OLT sobrescriben los defaults globales.
+# Solo es obligatorio especificar: name, ssh_user, ssh_pass.
+# =============================================================================
+
+defaults:
+  # --- Listener ---
+  syslog_port: 5514               # Puerto UDP de escucha (514 requiere root/CAP_NET_BIND_SERVICE)
+  parser_model: "huawei_ma5800"   # Modelo de parser a utilizar
+
+  # --- SSH Connection ---
+  ssh_port: 22                    # Puerto SSH de la OLT
+
+  # --- Provisioning Parameters (fallbacks si la OLT no los define) ---
+  management_vlan: 150            # VLAN de gestión para WAN DHCP
+  gemport: 2                      # GEM Port para service-port de gestión
+  traffic_table_up: "7"           # Traffic table inbound (índice numérico o nombre)
+  traffic_table_down: "7"         # Traffic table outbound (índice numérico o nombre)
+  tr069_profile_id: 1             # TR-069 server profile ID
+  dhcp_priority: 2                # Prioridad 802.1p para WAN DHCP
+  ip_index: 0                     # IP index para ont ipconfig
+
+  # --- Operational Tuning ---
+  cmd_delay: 0.4                  # Delay entre comandos SSH (segundos)
+  max_retries: 10                 # Reintentos por comando ante OLT ocupada
+  dedup_ttl_seconds: 300          # TTL del caché de deduplicación (5 minutos)
+
+olts:
+  # -------------------------------------------------------------------
+  # Ejemplo 1: OLT básica (solo credenciales, hereda todo de defaults)
+  # -------------------------------------------------------------------
+  "10.11.104.2":
+    name: "NODO-HORNILLOS"
+    ssh_user: "CHANGE_ME"
+    ssh_pass: "CHANGE_ME"
+    # ssh_port: 22                # Hereda del default
+    # management_vlan: 150        # Hereda del default
+
+  # -------------------------------------------------------------------
+  # Ejemplo 2: OLT con traffic-tables por nombre y profile-id distinto
+  # -------------------------------------------------------------------
+  "10.11.104.5":
+    name: "Villa Dolores 2"
+    ssh_user: "CHANGE_ME"
+    ssh_pass: "CHANGE_ME"
+    tr069_profile_id: 2
+    traffic_table_up: "SMARTOLT-VOIPMNG-10M"    # Nombre en vez de índice
+    traffic_table_down: "SMARTOLT-VOIPMNG-10M"
+
+  # -------------------------------------------------------------------
+  # Ejemplo 3: OLT con puerto SSH no estándar
+  # -------------------------------------------------------------------
+  "138.59.175.11":
+    name: "OLT-San_Jose"
+    ssh_user: "CHANGE_ME"
+    ssh_pass: "CHANGE_ME"
+    ssh_port: 1230
+
+  # -------------------------------------------------------------------
+  # Agregar más OLTs aquí siguiendo el mismo formato.
+  # La IP debe coincidir EXACTAMENTE con la IP origen de los paquetes
+  # UDP que envía la OLT al exportar syslog.
+  # -------------------------------------------------------------------

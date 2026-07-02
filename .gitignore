@@ -1,0 +1,50 @@
+# =============================================================================
+# Git Ignore — OLT Auto-Provision Daemon
+# =============================================================================
+
+# --- Credenciales reales (NO committear) ---
+olt-autoprovision-daemon/config/olts.yaml
+
+# --- Código legacy (no se usa más, solo referencia) ---
+consultas-legacy/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.so
+*.manifest
+*.spec
+
+# --- Entornos virtuales ---
+venv/
+.venv/
+env/
+.env
+*.env
+
+# --- Logs (generados en runtime) ---
+olt-autoprovision-daemon/logs/
+*.log
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- OS ---
+desktop.ini
+
+# --- Checkpoints (legacy) ---
+checkpoints/
+
+# --- Session logs (Netmiko) ---
+session.txt
