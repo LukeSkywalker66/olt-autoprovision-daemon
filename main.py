@@ -51,7 +51,7 @@ from core.ssh_worker import OLTConfig
 DEFAULT_CONFIG_PATH = "config/olts.yaml"
 DEFAULT_LOG_DIR = "logs"
 DEFAULT_HOST = "0.0.0.0"
-DEFAULT_PORT = 5514
+DEFAULT_PORT = 514
 DEFAULT_MAX_WORKERS = 50
 
 LOG_FORMAT = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
@@ -72,13 +72,19 @@ def setup_logging(log_dir: str = DEFAULT_LOG_DIR, debug: bool = False) -> None:
     - RotatingFileHandler: INFO level, 10 MB per file, 5 backups.
 
     Log files are stored in the specified directory (created automatically).
+    If the log directory or file cannot be created (e.g., permission denied),
+    the daemon falls back to console-only logging and continues.
 
     Args:
         log_dir: Directory for rotating log files.
         debug: If True, set console level to DEBUG.
     """
     log_path = Path(log_dir)
-    log_path.mkdir(parents=True, exist_ok=True)
+    try:
+        log_path.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # We'll handle this when trying to create the file handler below
+        pass
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)  # Capture all; handlers filter
@@ -92,17 +98,27 @@ def setup_logging(log_dir: str = DEFAULT_LOG_DIR, debug: bool = False) -> None:
     console_handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
     root_logger.addHandler(console_handler)
 
-    # Rotating file handler
+    # Rotating file handler — fall back to console-only on filesystem errors
     log_file = log_path / "olt-provision-daemon.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        str(log_file),
-        maxBytes=LOG_MAX_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(logging.DEBUG if debug else logging.INFO)
-    file_handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
-    root_logger.addHandler(file_handler)
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            str(log_file),
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(logging.DEBUG if debug else logging.INFO)
+        file_handler.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT))
+        root_logger.addHandler(file_handler)
+    except (PermissionError, FileNotFoundError, OSError) as exc:
+        # Log via the already-configured console handler
+        logger = logging.getLogger("olt_daemon")
+        logger.warning(
+            "Cannot write to log file '%s' — %s. "
+            "Logging to console only. Fix with: "
+            "sudo chown -R olt-daemon:olt-daemon %s",
+            log_file, exc, log_path,
+        )
 
     # Suppress noisy third-party loggers
     logging.getLogger("netmiko").setLevel(logging.WARNING)
@@ -330,7 +346,7 @@ async def _run_listener(args: argparse.Namespace) -> None:
     listener_task = asyncio.create_task(listener.start())
 
     # Wait for shutdown signal
-    await stop_event
+    await stop_event.wait()
     listener_task.cancel()
     try:
         await listener_task
@@ -364,6 +380,13 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(_run_listener(args))
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
+    except PermissionError as exc:
+        logger.critical(
+            "Permission denied binding to %s:%d — %s. "
+            "Use a port >= 1024, run as root, or add CAP_NET_BIND_SERVICE capability.",
+            args.host, args.port, exc,
+        )
+        sys.exit(1)
     except Exception as exc:
         logger.critical("Fatal error: %s", exc, exc_info=True)
         sys.exit(1)

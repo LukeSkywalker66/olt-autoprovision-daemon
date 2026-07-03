@@ -409,11 +409,16 @@ def _build_provisioning_commands(
             f"ont ipconfig {port} {ont_id} ip-index {cfg.ip_index} dhcp "
             f"vlan {cfg.management_vlan} priority {cfg.dhcp_priority}"
         ),
+        
+        f"ont internet-config {port} {ont_id} ip-index {cfg.ip_index}",
 
         # 3. TR-069 server profile
         f"ont tr069-server-config {port} {ont_id} profile-id {cfg.tr069_profile_id}",
 
-        # 4. Service-port for management VLAN
+        # 4. Exit GPON interface
+        "quit",
+
+        # 5. Service-port for management VLAN
         (
             f"service-port vlan {cfg.management_vlan} gpon {frame}/{slot}/{port} "
             f"ont {ont_id} gemport {cfg.gemport} multi-service "
@@ -422,8 +427,6 @@ def _build_provisioning_commands(
             f"outbound traffic-table {tt_down_kw} {tt_down}"
         ),
 
-        # 5. Exit GPON interface
-        "quit",
     ]
 
     return commands

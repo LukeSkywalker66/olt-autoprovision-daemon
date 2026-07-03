@@ -13,7 +13,7 @@
 
 defaults:
   # --- Listener ---
-  syslog_port: 5514               # Puerto UDP de escucha (514 requiere root/CAP_NET_BIND_SERVICE)
+  syslog_port: 514               # Puerto UDP de escucha (514 requiere root/CAP_NET_BIND_SERVICE)
   parser_model: "huawei_ma5800"   # Modelo de parser a utilizar
 
   # --- SSH Connection ---

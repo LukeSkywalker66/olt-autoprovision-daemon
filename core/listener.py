@@ -183,7 +183,7 @@ class SyslogListener:
         """
         Args:
             host: IP address to bind the UDP socket to (e.g., "0.0.0.0").
-            port: UDP port to listen on (e.g., 5514).
+            port: UDP port to listen on (e.g., 514).
             olt_registry: Registry of known OLTs with their configurations.
             dedup_cache: Optional deduplication cache. Created automatically if None.
             max_workers: Maximum number of concurrent SSH worker threads.
