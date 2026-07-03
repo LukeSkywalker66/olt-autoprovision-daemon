@@ -59,6 +59,37 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_BACKUP_COUNT = 5
 
+# ---------------------------------------------------------------------------
+# YAML → OLTConfig schema: (yaml_key, python_type, default_value)
+# Add new fields here — they automatically flow to load_olt_config() and OLTConfig.
+# ---------------------------------------------------------------------------
+_STR = str
+_INT = int
+_FLOAT = float
+
+CONFIG_SCHEMA: list[tuple[str, type, Any]] = [
+    # -- SSH connection --
+    ("ssh_port",                _INT,   22),
+    ("parser_model",            _STR,   "huawei_ma5800"),
+    # -- Management provisioning (gemport 2) --
+    ("management_vlan",         _INT,   150),
+    ("gemport",                 _INT,   2),
+    ("traffic_table_up",        _STR,   "7"),
+    ("traffic_table_down",      _STR,   "7"),
+    ("tr069_profile_id",        _INT,   1),
+    ("dhcp_priority",           _INT,   2),
+    ("ip_index",                _INT,   0),
+    # -- Optional internet service-port (gemport 1) —
+    ("internet_vlan",           _INT,   None),   # None = disabled
+    ("internet_gemport",        _INT,   1),
+    ("internet_traffic_table_up",   _STR, "7"),
+    ("internet_traffic_table_down", _STR, "7"),
+    # -- Operational tuning --
+    ("cmd_delay",               _FLOAT, 0.4),
+    ("max_retries",             _INT,   10),
+    ("dedup_ttl_seconds",       _INT,   300),
+]
+
 
 # =============================================================================
 # Logging Setup
@@ -208,43 +239,27 @@ def load_olt_config(config_path: str) -> OLTRegistry:
             )
             continue
 
-        # Build OLTConfig with type coercion
+        # Build OLTConfig with type coercion via declarative schema
         try:
-            # Optional internet service-port (gemport 1, e.g. VLAN 600)
-            internet_vlan_raw = merged.get("internet_vlan")
-            internet_vlan: int | None = None
-            internet_gemport: int = 1
-            internet_traffic_table_up: str = "7"
-            internet_traffic_table_down: str = "7"
-            if internet_vlan_raw is not None:
-                internet_vlan = int(internet_vlan_raw)
-                internet_gemport = int(merged.get("internet_gemport", 1))
-                internet_traffic_table_up = str(merged.get("internet_traffic_table_up", "7"))
-                internet_traffic_table_down = str(merged.get("internet_traffic_table_down", "7"))
+            kwargs: dict[str, Any] = {
+                "name": str(merged["name"]),
+                "ip": str(ip),
+                "ssh_user": str(merged["ssh_user"]),
+                "ssh_pass": str(merged["ssh_pass"]),
+            }
 
-            config = OLTConfig(
-                name=str(merged["name"]),
-                ip=str(ip),
-                ssh_user=str(merged["ssh_user"]),
-                ssh_pass=str(merged["ssh_pass"]),
-                ssh_port=int(merged.get("ssh_port", 22)),
-                parser_model=str(merged.get("parser_model", "huawei_ma5800")),
-                management_vlan=int(merged.get("management_vlan", 150)),
-                gemport=int(merged.get("gemport", 2)),
-                traffic_table_up=str(merged.get("traffic_table_up", "7")),
-                traffic_table_down=str(merged.get("traffic_table_down", "7")),
-                tr069_profile_id=int(merged.get("tr069_profile_id", 1)),
-                dhcp_priority=int(merged.get("dhcp_priority", 2)),
-                ip_index=int(merged.get("ip_index", 0)),
-                cmd_delay=float(merged.get("cmd_delay", 0.4)),
-                max_retries=int(merged.get("max_retries", 10)),
-                dedup_ttl_seconds=int(merged.get("dedup_ttl_seconds", 300)),
-                internet_vlan=internet_vlan,
-                internet_gemport=internet_gemport,
-                internet_traffic_table_up=internet_traffic_table_up,
-                internet_traffic_table_down=internet_traffic_table_down,
-            )
+            # Apply schema-driven fields: YAML value → type coercion → fallback to schema default
+            for yaml_key, py_type, default in CONFIG_SCHEMA:
+                raw_value = merged.get(yaml_key)
+                if raw_value is None and default is None:
+                    kwargs[yaml_key] = None
+                else:
+                    kwargs[yaml_key] = py_type(raw_value) if raw_value is not None else py_type(default)
+
+            config = OLTConfig(**kwargs)
             resolved[ip] = config
+
+            # Build log line with optional internet info
             internet_info = ""
             if config.internet_vlan is not None:
                 internet_info = (

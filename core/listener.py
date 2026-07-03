@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
@@ -38,21 +39,29 @@ logger = logging.getLogger("olt_daemon.listener")
 
 
 # =============================================================================
-# Deduplication Cache — TTL-based in-memory store
+# Deduplication Cache — TTL-based in-memory store (thread-safe)
 # =============================================================================
 
 class DedupCache:
     """
-    Simple in-memory TTL cache for event deduplication.
+    Thread-safe in-memory TTL cache for event deduplication.
 
     Prevents the same (olt_ip, fsp, ont_id) tuple from being provisioned
     multiple times within the TTL window. This handles the case where the OLT
     sends the same "service port incorrect" warning multiple times for the
     same ONT discovery event.
 
-    Thread-safe for use across asyncio and ThreadPoolExecutor contexts.
-    Uses a plain dict with periodic or lazy eviction of expired entries.
+    Thread safety: uses a re-entrant lock. Safe for concurrent access from
+    the asyncio event loop and ThreadPoolExecutor threads.
+
+    Eviction strategy: amortized O(1). Full sweep only runs every N checks
+    or when the cache exceeds a size threshold. This avoids O(n) scans on
+    every single is_duplicate() call.
     """
+
+    # Eviction tuning constants
+    _EVICT_INTERVAL_CHECKS = 500   # Full sweep every N checks
+    _EVICT_SIZE_THRESHOLD = 200    # Force sweep when cache exceeds this size
 
     def __init__(self, ttl_seconds: int = 300) -> None:
         """
@@ -61,12 +70,15 @@ class DedupCache:
         """
         self._ttl = ttl_seconds
         self._store: dict[tuple[str, str, str], float] = {}
+        self._lock = threading.RLock()
+        self._check_count: int = 0
 
     def is_duplicate(self, olt_ip: str, fsp: str, ont_id: str) -> bool:
         """
         Check if an event was already processed recently.
 
-        Also performs lazy eviction of expired entries on every check.
+        Performs amortized-O(1) lazy eviction: full sweeps only run
+        periodically, not on every single call.
 
         Args:
             olt_ip: Source IP of the OLT.
@@ -79,35 +91,55 @@ class DedupCache:
         key = (olt_ip, fsp, ont_id)
         now = time.monotonic()
 
-        # Lazy eviction: remove all expired entries
-        expired = [k for k, ts in self._store.items() if now - ts > self._ttl]
-        for k in expired:
-            del self._store[k]
+        with self._lock:
+            self._check_count += 1
 
-        if key in self._store:
-            age = now - self._store[key]
+            # Periodic full eviction sweep
+            if (
+                self._check_count % self._EVICT_INTERVAL_CHECKS == 0
+                or len(self._store) > self._EVICT_SIZE_THRESHOLD
+            ):
+                self._evict_expired(now)
+
+            # Check if key exists and is still valid
+            if key in self._store:
+                age = now - self._store[key]
+                if age <= self._ttl:
+                    logger.debug(
+                        "Dedup HIT: OLT=%s ONT=%s/%s (age=%.1fs, ttl=%ds)",
+                        olt_ip, fsp, ont_id, age, self._ttl,
+                    )
+                    return True
+                # Key exists but expired — remove it (O(1) cleanup)
+                del self._store[key]
+
+            # Not a duplicate — record it
+            self._store[key] = now
             logger.debug(
-                "Dedup HIT: OLT=%s ONT=%s/%s (age=%.1fs, ttl=%ds)",
-                olt_ip, fsp, ont_id, age, self._ttl,
+                "Dedup MISS: OLT=%s ONT=%s/%s — recorded in cache (ttl=%ds)",
+                olt_ip, fsp, ont_id, self._ttl,
             )
-            return True
+            return False
 
-        # Not a duplicate — record it
-        self._store[key] = now
-        logger.debug(
-            "Dedup MISS: OLT=%s ONT=%s/%s — recorded in cache (ttl=%ds)",
-            olt_ip, fsp, ont_id, self._ttl,
-        )
-        return False
+    def _evict_expired(self, now: float) -> None:
+        """Remove all expired entries. Must be called with lock held."""
+        expired = [k for k, ts in self._store.items() if now - ts > self._ttl]
+        if expired:
+            logger.debug("DedupCache evicting %d expired entries", len(expired))
+            for k in expired:
+                del self._store[k]
 
     def __len__(self) -> int:
         """Return the number of active (non-expired) cache entries."""
         now = time.monotonic()
-        return sum(1 for ts in self._store.values() if now - ts <= self._ttl)
+        with self._lock:
+            return sum(1 for ts in self._store.values() if now - ts <= self._ttl)
 
     def clear(self) -> None:
         """Clear all cache entries."""
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
+            self._check_count = 0
 
 
 # =============================================================================

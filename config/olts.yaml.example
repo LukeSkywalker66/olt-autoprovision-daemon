@@ -6,21 +6,23 @@
 #
 # WARNING: config/olts.yaml is in .gitignore — NEVER commit real credentials.
 # =============================================================================
-# Cada OLT se indexa por su IP (la misma que envía los syslogs UDP).
-# Las claves definidas en una entrada de OLT sobrescriben los defaults globales.
-# Solo es obligatorio especificar: name, ssh_user, ssh_pass.
+#
+# YAML-First Design:
+#   - The 'defaults' section provides global fallbacks for all OLTs.
+#   - Each OLT entry overrides any default with OLT-specific values.
+#   - New fields added to CONFIG_SCHEMA in main.py automatically flow here.
+#
+# Required per OLT:  name, ssh_user, ssh_pass
+# Everything else:   optional (falls back to defaults section, then to code schema)
 # =============================================================================
 
 defaults:
-  # --- Listener ---
-  syslog_port: 514               # Puerto UDP de escucha (514 requiere root/CAP_NET_BIND_SERVICE)
-  parser_model: "huawei_ma5800"   # Modelo de parser a utilizar
-
-  # --- SSH Connection ---
+  # ---- SSH Connection ----
   ssh_port: 22                    # Puerto SSH de la OLT
+  parser_model: "huawei_ma5800"   # Modelo de parser syslog
 
-  # --- Provisioning Parameters — Gestión (gemport 2, obligatorio) ---
-  management_vlan: 150            # VLAN de gestión para WAN DHCP
+  # ---- Management Provisioning (gemport 2, siempre se crea) ----
+  management_vlan: 150            # VLAN de gestión para WAN DHCP + TR-069
   gemport: 2                      # GEM Port para service-port de gestión
   traffic_table_up: "7"           # Traffic table inbound (índice numérico o nombre)
   traffic_table_down: "7"         # Traffic table outbound (índice numérico o nombre)
@@ -28,14 +30,14 @@ defaults:
   dhcp_priority: 2                # Prioridad 802.1p para WAN DHCP
   ip_index: 0                     # IP index para ont ipconfig
 
-  # --- Provisioning Parameters — Internet (gemport 1, opcional) ---
-  # Descomentar internet_vlan para habilitar service-port de internet:
-  # internet_vlan: 600            # VLAN de datos/internet (gemport 1)
-  # internet_gemport: 1           # GEM port para internet (default: 1)
-  # internet_traffic_table_up: "7"   # Traffic table inbound para internet
-  # internet_traffic_table_down: "7" # Traffic table outbound para internet
+  # ---- Internet Provisioning (gemport 1, opcional) ----
+  # Descomentar internet_vlan para habilitar un service-port extra de internet:
+  # internet_vlan: 600            # VLAN de datos/internet
+  # internet_gemport: 1           # GEM port para internet (típicamente 1)
+  # internet_traffic_table_up: "7"    # Traffic table inbound para internet
+  # internet_traffic_table_down: "7"  # Traffic table outbound para internet
 
-  # --- Operational Tuning ---
+  # ---- Operational Tuning ----
   cmd_delay: 0.4                  # Delay entre comandos SSH (segundos)
   max_retries: 10                 # Reintentos por comando ante OLT ocupada
   dedup_ttl_seconds: 300          # TTL del caché de deduplicación (5 minutos)
@@ -48,8 +50,6 @@ olts:
     name: "NODO-HORNILLOS"
     ssh_user: "CHANGE_ME"
     ssh_pass: "CHANGE_ME"
-    # ssh_port: 22                # Hereda del default
-    # management_vlan: 150        # Hereda del default
 
   # -------------------------------------------------------------------
   # Ejemplo 2: OLT con traffic-tables por nombre y profile-id distinto
@@ -78,10 +78,10 @@ olts:
   #   name: "NODO-CON-INTERNET"
   #   ssh_user: "CHANGE_ME"
   #   ssh_pass: "CHANGE_ME"
-  #   internet_vlan: 600            # VLAN de datos/internet
-  #   internet_gemport: 1           # GEM port para internet (default: 1)
-  #   internet_traffic_table_up: "7"   # Traffic table inbound internet
-  #   internet_traffic_table_down: "7" # Traffic table outbound internet
+  #   internet_vlan: 600              # Habilita service-port de internet
+  #   internet_gemport: 1
+  #   internet_traffic_table_up: "7"
+  #   internet_traffic_table_down: "7"
 
   # -------------------------------------------------------------------
   # Agregar más OLTs aquí siguiendo el mismo formato.

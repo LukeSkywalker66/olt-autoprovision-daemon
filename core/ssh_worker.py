@@ -8,10 +8,15 @@ Recycles proven logic from:
   - consultas-legacy/huawei_injection.py → _ensure_huawei_config_mode
 
 Wraps everything into clean, SOLID classes with strict type hints and docstrings.
-The worker executes exactly 3 steps (NO ont add — the OLT auto-add-policy handles that):
-  1. Create WAN DHCP on management VLAN.
-  2. Inject TR-069 server profile.
-  3. Create service-port for the management VLAN.
+The worker executes provisioning commands (NO ont add — the OLT auto-add-policy
+handles that):
+  1. Enter GPON interface.
+  2. Configure WAN DHCP on management VLAN.
+  3. Set internet-config ip-index.
+  4. Inject TR-069 server profile.
+  5. Exit GPON interface (quit).
+  6. Create service-port for management VLAN (gemport 2).
+  7. (Optional) Create service-port for internet VLAN (gemport 1).
 
 Usage (called by listener.py via ThreadPoolExecutor):
     from core.ssh_worker import ssh_provision_worker
@@ -24,7 +29,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from netmiko import ConnectHandler
@@ -37,6 +42,20 @@ from netmiko.exceptions import (
 # Module-level logger (configured by main.py)
 # ---------------------------------------------------------------------------
 logger = logging.getLogger("olt_daemon.ssh_worker")
+
+# ---------------------------------------------------------------------------
+# VRP output patterns that indicate command failure
+# ---------------------------------------------------------------------------
+FAILURE_MARKERS: list[str] = [
+    "Failure:",
+    "Error:",
+    "Error%",
+    "% Unknown",
+    "% Invalid",
+    "% Incomplete",
+    "% Ambiguous",
+    "% Too many",
+]
 
 
 # =============================================================================
@@ -103,7 +122,7 @@ class HuaweiSSHClient:
     SSH client for Huawei OLTs via Netmiko.
 
     Encapsulates connection lifecycle, config mode entry, command execution
-    with retry/busy/paging handling, and safe disconnection.
+    with retry/busy/paging handling, output validation, and safe disconnection.
 
     Refactored from:
       - consultas-legacy/ssh_client.py  (connect_olt, close_olt)
@@ -124,6 +143,7 @@ class HuaweiSSHClient:
         "It will take several minutes to",
         "The percentage of saved data on",
         "Failure: System is busy",
+        "System is busy",
     ]
 
     # Paging indicators in command output.
@@ -163,7 +183,10 @@ class HuaweiSSHClient:
             self._config.name, self._config.ip, self._config.ssh_port,
         )
         self._conn = ConnectHandler(**device)
-        logger.info("Connected to %s — prompt: %s", self._config.name, self._conn.find_prompt().strip())
+        logger.info(
+            "Connected to %s — prompt: %s",
+            self._config.name, self._conn.find_prompt().strip(),
+        )
 
     def disconnect(self) -> None:
         """
@@ -195,7 +218,7 @@ class HuaweiSSHClient:
         Ensure the SSH session is in Huawei VRP configuration mode.
 
         Sequence: enable → config
-        Verifies prompt at each stage. Aborts if prompt matches forbidden prefixes.
+        Verifies prompt at each stage and logs command outputs.
 
         Refactored from consultas-legacy/huawei_injection.py:_ensure_huawei_config_mode()
         """
@@ -211,12 +234,14 @@ class HuaweiSSHClient:
             return
 
         # Step 1: enable
-        self._send_command("enable", read_timeout=10)
+        out_enable = self._send_command("enable", read_timeout=10)
+        self._log_command_result("enable", out_enable)
         prompt = self._conn.find_prompt().strip()
         logger.info("Post-enable prompt: %s", prompt)
 
         # Step 2: config
-        self._send_command("config", read_timeout=10)
+        out_config = self._send_command("config", read_timeout=10)
+        self._log_command_result("config", out_config)
         prompt = self._conn.find_prompt().strip()
         logger.info("Post-config prompt: %s", prompt)
 
@@ -231,11 +256,8 @@ class HuaweiSSHClient:
 
     def execute(self, cmd: str, log_prefix: str = "CMD") -> str:
         """
-        Execute a command with automatic logging and retry/busy/paging handling.
-
-        Centralizes the legacy pattern: log → execute → log output.
-
-        Refactored from consultas-legacy/omci.py:execute_command()
+        Execute a VRP command with logging, retry/busy/paging handling,
+        and output validation.
 
         Args:
             cmd: VRP command to execute.
@@ -243,11 +265,49 @@ class HuaweiSSHClient:
 
         Returns:
             Stripped command output.
+
+        Raises:
+            RuntimeError: If the command fails after all retries.
         """
         logger.info("[%s] %s", log_prefix, cmd)
         out = self._send_command(cmd)
-        logger.debug("[%s] Output (%d chars): %s", log_prefix, len(out), out[:200])
+        self._log_command_result(log_prefix, out)
         return out
+
+    @staticmethod
+    def _log_command_result(label: str, output: str) -> None:
+        """
+        Log the result of a VRP command execution at INFO level.
+
+        Detects failure patterns in the output and logs accordingly.
+        If the output is empty, logs a simple success marker.
+
+        Args:
+            label: Command label for the log line.
+            output: Full command output text.
+        """
+        stripped = output.strip()
+        if not stripped:
+            logger.info("[%s] ✓ OK (no output)", label)
+            return
+
+        # Check for failure indicators
+        failures = [m for m in FAILURE_MARKERS if m in stripped]
+        if failures:
+            # Truncate for log readability
+            summary = stripped[:300].replace("\n", " | ")
+            if len(stripped) > 300:
+                summary += f"... (+{len(stripped) - 300} chars)"
+            logger.warning(
+                "[%s] ✗ WARNING — failure indicators: %s — output: %s",
+                label, ", ".join(failures), summary,
+            )
+        else:
+            # Success with output
+            summary = stripped[:200].replace("\n", " | ")
+            if len(stripped) > 200:
+                summary += f"... (+{len(stripped) - 200} chars)"
+            logger.info("[%s] ✓ OK (%d chars): %s", label, len(stripped), summary)
 
     def _send_command(self, cmd: str, read_timeout: int = 30) -> str:
         """
@@ -286,11 +346,12 @@ class HuaweiSSHClient:
                 output = out.strip()
 
                 # --- Case 1: OLT is busy (data backup) ---
-                if any(output.startswith(p) for p in self.BUSY_PATTERNS):
+                # Check with 'in' instead of startswith — busy messages can
+                # appear anywhere in the output, not just at the beginning.
+                if any(p in output for p in self.BUSY_PATTERNS):
                     logger.warning(
                         "OLT %s busy executing '%s' — retry %d/%d in %ds",
-                        self._config.name, cmd, attempt, max_retries,
-                        200,
+                        self._config.name, cmd, attempt, max_retries, 200,
                     )
                     time.sleep(200)  # Legacy uses 200s delay for busy OLTs
                     continue
@@ -298,8 +359,7 @@ class HuaweiSSHClient:
                 # --- Case 2: Confirmation prompt (ends with "}:") ---
                 if output.endswith("}:"):
                     logger.info(
-                        "Command '%s' expects confirmation — sending Enter",
-                        cmd,
+                        "Command '%s' expects confirmation — sending Enter", cmd,
                     )
                     extra = self._conn.send_command_timing("\n", read_timeout=5)
                     output += "\n" + extra.strip()
