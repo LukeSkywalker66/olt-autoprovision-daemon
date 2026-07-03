@@ -59,7 +59,7 @@ class OLTConfig:
     ssh_port: int = 22
     parser_model: str = "huawei_ma5800"
 
-    # Provisioning parameters
+    # Provisioning parameters — management (gemport 2)
     management_vlan: int = 150
     gemport: int = 2
     traffic_table_up: str = "7"
@@ -67,6 +67,12 @@ class OLTConfig:
     tr069_profile_id: int = 1
     dhcp_priority: int = 2
     ip_index: int = 0
+
+    # Optional internet service-port (gemport 1) — disabled when None
+    internet_vlan: int | None = None
+    internet_gemport: int = 1
+    internet_traffic_table_up: str = "7"
+    internet_traffic_table_down: str = "7"
 
     # Operational tuning
     cmd_delay: float = 0.4
@@ -373,12 +379,14 @@ def _build_provisioning_commands(
     """
     Build the ordered list of VRP commands for ONT provisioning.
 
-    Flow (3 steps, NO ont add — OLT auto-add-policy already registered the ONT):
+    Flow (NO ont add — OLT auto-add-policy already registered the ONT):
       1. Enter GPON interface.
-      2. Configure WAN DHCP on management VLAN.
-      3. Inject TR-069 server profile.
-      4. Create service-port for management VLAN.
+      2. Configure WAN DHCP on management VLAN (gemport 2).
+      3. Set internet-config ip-index.
+      4. Inject TR-069 server profile.
       5. Exit GPON interface.
+      6. Create service-port for management VLAN (gemport 2).
+      7. (Optional) Create service-port for internet VLAN (gemport 1).
 
     Args:
         fsp: Frame/Slot/Port string from parser (e.g., "0/1/0").
@@ -404,12 +412,12 @@ def _build_provisioning_commands(
         # 1. Enter GPON interface
         f"interface gpon {frame}/{slot}",
 
-        # 2. WAN DHCP on management VLAN
+        # 2. WAN DHCP on management VLAN (gemport 2)
         (
             f"ont ipconfig {port} {ont_id} ip-index {cfg.ip_index} dhcp "
             f"vlan {cfg.management_vlan} priority {cfg.dhcp_priority}"
         ),
-        
+
         f"ont internet-config {port} {ont_id} ip-index {cfg.ip_index}",
 
         # 3. TR-069 server profile
@@ -418,7 +426,7 @@ def _build_provisioning_commands(
         # 4. Exit GPON interface
         "quit",
 
-        # 5. Service-port for management VLAN
+        # 5. Service-port for management VLAN (gemport 2)
         (
             f"service-port vlan {cfg.management_vlan} gpon {frame}/{slot}/{port} "
             f"ont {ont_id} gemport {cfg.gemport} multi-service "
@@ -426,8 +434,26 @@ def _build_provisioning_commands(
             f"inbound traffic-table {tt_up_kw} {tt_up} "
             f"outbound traffic-table {tt_down_kw} {tt_down}"
         ),
-
     ]
+
+    # 6. (Optional) Internet service-port (gemport 1)
+    if cfg.internet_vlan is not None:
+        itt_up = cfg.internet_traffic_table_up.strip()
+        itt_down = cfg.internet_traffic_table_down.strip()
+        itt_up_kw = "index" if _is_numeric(itt_up) else "name"
+        itt_down_kw = "index" if _is_numeric(itt_down) else "name"
+
+        commands.append(
+            f"service-port vlan {cfg.internet_vlan} gpon {frame}/{slot}/{port} "
+            f"ont {ont_id} gemport {cfg.internet_gemport} multi-service "
+            f"user-vlan {cfg.internet_vlan} tag-transform translate "
+            f"inbound traffic-table {itt_up_kw} {itt_up} "
+            f"outbound traffic-table {itt_down_kw} {itt_down}"
+        )
+        logger.debug(
+            "Added internet service-port: vlan=%d gemport=%d for ONT %s/%s",
+            cfg.internet_vlan, cfg.internet_gemport, fsp, ont_id,
+        )
 
     return commands
 

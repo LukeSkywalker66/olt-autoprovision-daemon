@@ -14,7 +14,7 @@ defaults:
   # --- SSH Connection ---
   ssh_port: 22                    # Puerto SSH de la OLT
 
-  # --- Provisioning Parameters (fallbacks si la OLT no los define) ---
+  # --- Provisioning Parameters — Gestión (gemport 2, obligatorio) ---
   management_vlan: 150            # VLAN de gestión para WAN DHCP
   gemport: 2                      # GEM Port para service-port de gestión
   traffic_table_up: "0"           # Traffic table inbound (índice o nombre)
@@ -23,6 +23,13 @@ defaults:
   dhcp_priority: 2                # Prioridad 802.1p para WAN DHCP
   ip_index: 0                     # IP index para ont ipconfig
 
+  # --- Provisioning Parameters — Internet (gemport 1, opcional) ---
+  # Descomentar internet_vlan para habilitar service-port de internet:
+  # internet_vlan: 600            # VLAN de datos/internet (gemport 1)
+  # internet_gemport: 1           # GEM port para internet (default: 1)
+  # internet_traffic_table_up: "7"   # Traffic table inbound para internet
+  # internet_traffic_table_down: "7" # Traffic table outbound para internet
+
   # --- Operational Tuning ---
   cmd_delay: 0.4                  # Delay entre comandos SSH (segundos)
   max_retries: 10                 # Reintentos por comando ante OLT ocupada
@@ -30,18 +37,20 @@ defaults:
 
 olts:
   # -------------------------------------------------------------------
-  # Ejemplo: NODO-HORNILLOS (MA5800-X2)
+  # NODO-HORNILLOS (MA5800-X2) — con service-port de internet VLAN 600
   # -------------------------------------------------------------------
   "10.255.255.6":
     name: "NODO-HORNILLOS"
     ssh_user: "smartolt_usr"
     ssh_pass: "2Finternet2026!"
-    ssh_port: 27122                # Hereda del default
-    # management_vlan: 150        # Hereda del default
-    # tr069_profile_id: 1         # Hereda del default
+    ssh_port: 27122
+    internet_vlan: 600            # Service-port internet (gemport 1)
+    internet_gemport: 1
+    internet_traffic_table_up: "7"
+    internet_traffic_table_down: "7"
 
   # -------------------------------------------------------------------
-  # Ejemplo: Villa Dolores 2 (usa traffic-tables con nombre y profile-id distinto)
+  # Villa Dolores 2 (usa traffic-tables con nombre y profile-id distinto)
   # -------------------------------------------------------------------
   "10.11.104.5":
     name: "Villa Dolores 2"
@@ -52,7 +61,7 @@ olts:
     traffic_table_down: "SMARTOLT-VOIPMNG-10M"
 
   # -------------------------------------------------------------------
-  # Ejemplo: OLT San José (puerto SSH no estándar)
+  # OLT San José (puerto SSH no estándar, sin internet extra)
   # -------------------------------------------------------------------
   "138.59.175.11":
     name: "OLT-San_Jose"

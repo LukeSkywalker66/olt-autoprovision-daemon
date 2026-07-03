@@ -19,7 +19,7 @@ defaults:
   # --- SSH Connection ---
   ssh_port: 22                    # Puerto SSH de la OLT
 
-  # --- Provisioning Parameters (fallbacks si la OLT no los define) ---
+  # --- Provisioning Parameters — Gestión (gemport 2, obligatorio) ---
   management_vlan: 150            # VLAN de gestión para WAN DHCP
   gemport: 2                      # GEM Port para service-port de gestión
   traffic_table_up: "7"           # Traffic table inbound (índice numérico o nombre)
@@ -27,6 +27,13 @@ defaults:
   tr069_profile_id: 1             # TR-069 server profile ID
   dhcp_priority: 2                # Prioridad 802.1p para WAN DHCP
   ip_index: 0                     # IP index para ont ipconfig
+
+  # --- Provisioning Parameters — Internet (gemport 1, opcional) ---
+  # Descomentar internet_vlan para habilitar service-port de internet:
+  # internet_vlan: 600            # VLAN de datos/internet (gemport 1)
+  # internet_gemport: 1           # GEM port para internet (default: 1)
+  # internet_traffic_table_up: "7"   # Traffic table inbound para internet
+  # internet_traffic_table_down: "7" # Traffic table outbound para internet
 
   # --- Operational Tuning ---
   cmd_delay: 0.4                  # Delay entre comandos SSH (segundos)
@@ -63,6 +70,18 @@ olts:
     ssh_user: "CHANGE_ME"
     ssh_pass: "CHANGE_ME"
     ssh_port: 1230
+
+  # -------------------------------------------------------------------
+  # Ejemplo 4: OLT con service-port de internet (gemport 1) adicional
+  # -------------------------------------------------------------------
+  # "10.20.30.40":
+  #   name: "NODO-CON-INTERNET"
+  #   ssh_user: "CHANGE_ME"
+  #   ssh_pass: "CHANGE_ME"
+  #   internet_vlan: 600            # VLAN de datos/internet
+  #   internet_gemport: 1           # GEM port para internet (default: 1)
+  #   internet_traffic_table_up: "7"   # Traffic table inbound internet
+  #   internet_traffic_table_down: "7" # Traffic table outbound internet
 
   # -------------------------------------------------------------------
   # Agregar más OLTs aquí siguiendo el mismo formato.

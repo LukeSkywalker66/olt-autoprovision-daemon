@@ -170,10 +170,15 @@ def load_olt_config(config_path: str) -> OLTRegistry:
             f"Invalid configuration: '{config_path}' must contain an 'olts' section."
         )
 
-    # Extract defaults (all keys except 'olts')
-    defaults: dict[str, Any] = {
-        k: v for k, v in raw.items() if k != "olts"
-    }
+    # Extract defaults section (if present) — unwrap the 'defaults' key
+    defaults: dict[str, Any] = raw.get("defaults", {})
+    if not isinstance(defaults, dict):
+        logger.warning(
+            "Invalid 'defaults' section in %s — expected a mapping, got %s. "
+            "Using empty defaults.",
+            config_path, type(defaults).__name__,
+        )
+        defaults = {}
 
     olts_raw = raw["olts"]
     if not isinstance(olts_raw, dict) or not olts_raw:
@@ -205,6 +210,18 @@ def load_olt_config(config_path: str) -> OLTRegistry:
 
         # Build OLTConfig with type coercion
         try:
+            # Optional internet service-port (gemport 1, e.g. VLAN 600)
+            internet_vlan_raw = merged.get("internet_vlan")
+            internet_vlan: int | None = None
+            internet_gemport: int = 1
+            internet_traffic_table_up: str = "7"
+            internet_traffic_table_down: str = "7"
+            if internet_vlan_raw is not None:
+                internet_vlan = int(internet_vlan_raw)
+                internet_gemport = int(merged.get("internet_gemport", 1))
+                internet_traffic_table_up = str(merged.get("internet_traffic_table_up", "7"))
+                internet_traffic_table_down = str(merged.get("internet_traffic_table_down", "7"))
+
             config = OLTConfig(
                 name=str(merged["name"]),
                 ip=str(ip),
@@ -222,12 +239,23 @@ def load_olt_config(config_path: str) -> OLTRegistry:
                 cmd_delay=float(merged.get("cmd_delay", 0.4)),
                 max_retries=int(merged.get("max_retries", 10)),
                 dedup_ttl_seconds=int(merged.get("dedup_ttl_seconds", 300)),
+                internet_vlan=internet_vlan,
+                internet_gemport=internet_gemport,
+                internet_traffic_table_up=internet_traffic_table_up,
+                internet_traffic_table_down=internet_traffic_table_down,
             )
             resolved[ip] = config
+            internet_info = ""
+            if config.internet_vlan is not None:
+                internet_info = (
+                    f" internet_vlan={config.internet_vlan}"
+                    f" internet_gemport={config.internet_gemport}"
+                )
             logger.info(
-                "Loaded OLT: %s (%s) — user=%s port=%d vlan=%d tr069_profile=%d",
+                "Loaded OLT: %s (%s) — user=%s port=%d vlan=%d tr069_profile=%d%s",
                 config.name, config.ip, config.ssh_user,
-                config.ssh_port, config.management_vlan, config.tr069_profile_id,
+                config.ssh_port, config.management_vlan,
+                config.tr069_profile_id, internet_info,
             )
         except (ValueError, TypeError) as exc:
             logger.error(
