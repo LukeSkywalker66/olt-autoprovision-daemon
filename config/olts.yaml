@@ -17,8 +17,8 @@ defaults:
   # --- Provisioning Parameters — Gestión (gemport 2, obligatorio) ---
   management_vlan: 150            # VLAN de gestión para WAN DHCP
   gemport: 2                      # GEM Port para service-port de gestión
-  traffic_table_up: "0"           # Traffic table inbound (índice o nombre)
-  traffic_table_down: "0"         # Traffic table outbound (índice o nombre)
+  traffic_table_up: "7"           # Traffic table inbound (índice o nombre)
+  traffic_table_down: "7"         # Traffic table outbound (índice o nombre)
   tr069_profile_id: 1             # TR-069 server profile ID
   dhcp_priority: 2                # Prioridad 802.1p para WAN DHCP
   ip_index: 0                     # IP index para ont ipconfig
@@ -46,8 +46,8 @@ olts:
     ssh_port: 27122
     internet_vlan: 600            # Service-port internet (gemport 1)
     internet_gemport: 1
-    internet_traffic_table_up: "7"
-    internet_traffic_table_down: "7"
+    internet_traffic_table_up: "6"
+    internet_traffic_table_down: "6"
 
   # -------------------------------------------------------------------
   # Villa Dolores 2 (usa traffic-tables con nombre y profile-id distinto)

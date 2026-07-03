@@ -478,7 +478,7 @@ def _build_provisioning_commands(
             f"vlan {cfg.management_vlan} priority {cfg.dhcp_priority}"
         ),
 
-        f"ont internet-config {port} {ont_id} ip-index {cfg.ip_index}",
+        #f"ont internet-config {port} {ont_id} ip-index {cfg.ip_index}",
 
         # 3. TR-069 server profile
         f"ont tr069-server-config {port} {ont_id} profile-id {cfg.tr069_profile_id}",
